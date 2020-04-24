@@ -12,7 +12,10 @@ import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.provider.MediaStore
+import android.text.Editable
+import android.text.TextWatcher
 import android.util.Log
+import android.view.View
 import android.widget.Toast
 import androidx.annotation.Keep
 import androidx.annotation.RequiresApi
@@ -45,12 +48,15 @@ class MainActivity : AppCompatActivity() {
     }
     private val width by lazy { sharedPref.getInt("Width", 0) }
     private val height by lazy { sharedPref.getInt("Height", 0) }
+    private val useCustomize by lazy { sharedPref.getBoolean("useCustomize", false) }
+    private val customizeHeight by lazy { sharedPref.getInt("customizeHeight", 635) }
 
     @SuppressLint("SetTextI18n")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
         registerReceiver(MyReceiver(), IntentFilter("HeaderSize"))
+        initView()
         if (ContextCompat.checkSelfPermission(
                 applicationContext,
                 Manifest.permission.READ_EXTERNAL_STORAGE
@@ -64,6 +70,36 @@ class MainActivity : AppCompatActivity() {
                 REQUEST_PERMISSION
             )
         }
+        if (CheckXP()) {
+            Toast.makeText(applicationContext, "Hooked", Toast.LENGTH_SHORT).show()
+            if (width == 0) {
+                sendBroadcast(Intent("getSize"))
+            }
+        } else {
+            Toast.makeText(applicationContext, "Hook failed", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun initView() {
+        if (useCustomize) {
+            customizeSwitch.isChecked = useCustomize
+            customizeGroup.visibility = View.VISIBLE
+            initCustomGroup()
+        }
+
+        customizeSwitch.setOnCheckedChangeListener { buttonView, isChecked ->
+            if (isChecked) {
+                customizeGroup.visibility = View.VISIBLE
+                initCustomGroup()
+            } else {
+                customizeGroup.visibility = View.GONE
+                with(sharedPref.edit()) {
+                    putBoolean("useCustomize", false)
+                    apply()
+                }
+            }
+        }
+
         imageView.setOnClickListener {
             val intent = Intent(Intent.ACTION_GET_CONTENT).apply { type = "image/*" }
             if (intent.resolveActivity(packageManager) != null) startActivityForResult(
@@ -86,62 +122,46 @@ class MainActivity : AppCompatActivity() {
             sendBroadcast(Intent("Change").apply {
                 putExtra("Uri", uri.toString())
             })
+            Toast.makeText(applicationContext, "已更换", Toast.LENGTH_SHORT).show()
         }
         closeLauncher.setOnClickListener {
             RootCommand()
             closeOPLauncher()
             Toast.makeText(applicationContext, "已重启桌面", Toast.LENGTH_SHORT).show()
         }
-        if (CheckXP()) {
-            Toast.makeText(applicationContext, "Hooked", Toast.LENGTH_SHORT).show()
-            sendBroadcast(Intent("getSize"))
-        } else {
-            Toast.makeText(applicationContext, "Hook failed", Toast.LENGTH_SHORT).show()
-        }
+
     }
 
-    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
-        super.onActivityResult(requestCode, resultCode, data)
-        if (requestCode == REQUEST_IMG_GET && resultCode == Activity.RESULT_OK) {
-            data?.data?.let { cropIMG(it) }
-        }
-        if (requestCode == REQUEST_IMG_CROP && resultCode == Activity.RESULT_OK) {
-            uri = data?.data
-//            Toast.makeText(applicationContext, data?.data.toString(), Toast.LENGTH_SHORT).show()
-            imageView.setImageURI(uri!!)
-        }
-    }
-
-    override fun onRequestPermissionsResult(
-        requestCode: Int,
-        permissions: Array<out String>,
-        grantResults: IntArray
-    ) {
-        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        when (requestCode) {
-            REQUEST_PERMISSION -> {
-                if (grantResults.isNotEmpty() && grantResults[0] != PackageManager.PERMISSION_GRANTED) {
-                    Toast.makeText(
-                        applicationContext,
-                        "呐，没有存储权限，是没有办法使用的呢 (*^_^*)",
-                        Toast.LENGTH_SHORT
-                    )
-                        .show()
-                    Handler().postDelayed({
-                        requestPermissions(
-                            arrayOf(
-                                Manifest.permission.READ_EXTERNAL_STORAGE,
-                                Manifest.permission.WRITE_EXTERNAL_STORAGE
-                            ),
-                            REQUEST_PERMISSION_AGAIN
-                        )
-                    }, 2000)
+    private fun initCustomGroup() {
+        if (customizeSwitch.isChecked) {
+            customizeW.hint = width.toString()
+            customizeW.isEnabled = false
+            customizeH.hint = customizeHeight.toString()
+            object : TextWatcher {
+                override fun afterTextChanged(s: Editable?) {
                 }
+
+                override fun beforeTextChanged(
+                    s: CharSequence?,
+                    start: Int,
+                    count: Int,
+                    after: Int
+                ) {
+                }
+
+                override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
+                    saveCustomize.isEnabled = customizeH.text.isNotEmpty()
+                }
+            }.also {
+                customizeH.addTextChangedListener(it)
+                customizeW.addTextChangedListener(it)
             }
-            REQUEST_PERMISSION_AGAIN -> {
-                Toast.makeText(applicationContext, "?????????????????????", Toast.LENGTH_SHORT)
-                    .show()
-                finish()
+            saveCustomize.setOnClickListener {
+                with(sharedPref.edit()) {
+                    putInt("customizeHeight", customizeH.text.toString().toInt())
+                    putBoolean("useCustomize", true)
+                    apply()
+                }
             }
         }
     }
@@ -208,15 +228,22 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-
     private fun cropIMG(uri: Uri) {
         val intent = Intent("com.android.camera.action.CROP").apply {
             setDataAndType(uri, "image/*")
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-            putExtra("aspectX", width)
-            putExtra("aspectY", height)
-            putExtra("outputX", width)
-            putExtra("outputY", height)
+            if (customizeSwitch.isChecked) {
+                val h = sharedPref.getInt("customizeHeight", 635)
+                putExtra("aspectX", width)
+                putExtra("aspectY", h)
+                putExtra("outputX", width)
+                putExtra("outputY", h)
+            } else {
+                putExtra("aspectX", width)
+                putExtra("aspectY", height)
+                putExtra("outputX", width)
+                putExtra("outputY", height)
+            }
             putExtra("crop", true)
             putExtra("return-data", false)
             putExtra("noFaceDetection", true)
@@ -268,4 +295,50 @@ class MainActivity : AppCompatActivity() {
 
     @Keep
     private fun CheckXP() = false
+
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == REQUEST_IMG_GET && resultCode == Activity.RESULT_OK) {
+            data?.data?.let { cropIMG(it) }
+        }
+        if (requestCode == REQUEST_IMG_CROP && resultCode == Activity.RESULT_OK) {
+            uri = data?.data
+//            Toast.makeText(applicationContext, data?.data.toString(), Toast.LENGTH_SHORT).show()
+            imageView.setImageURI(uri!!)
+        }
+    }
+
+    override fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<out String>,
+        grantResults: IntArray
+    ) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        when (requestCode) {
+            REQUEST_PERMISSION -> {
+                if (grantResults.isNotEmpty() && grantResults[0] != PackageManager.PERMISSION_GRANTED) {
+                    Toast.makeText(
+                        applicationContext,
+                        "呐，没有存储权限，是没有办法使用的呢 (*^_^*)",
+                        Toast.LENGTH_SHORT
+                    )
+                        .show()
+                    Handler().postDelayed({
+                        requestPermissions(
+                            arrayOf(
+                                Manifest.permission.READ_EXTERNAL_STORAGE,
+                                Manifest.permission.WRITE_EXTERNAL_STORAGE
+                            ),
+                            REQUEST_PERMISSION_AGAIN
+                        )
+                    }, 2000)
+                }
+            }
+            REQUEST_PERMISSION_AGAIN -> {
+                Toast.makeText(applicationContext, "?????????????????????", Toast.LENGTH_SHORT)
+                    .show()
+                finish()
+            }
+        }
+    }
 }
