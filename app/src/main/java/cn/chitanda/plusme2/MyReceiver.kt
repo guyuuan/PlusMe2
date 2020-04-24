@@ -10,8 +10,11 @@ class MyReceiver : BroadcastReceiver() {
         // This method is called when the BroadcastReceiver is receiving an Intent broadcast.
         val sharedPref = context.getSharedPreferences("Setting", Context.MODE_PRIVATE)
         with(sharedPref.edit()) {
-            putInt("Width", intent.getIntExtra("Width", -1))
-            putInt("Height", intent.getIntExtra("Height", -1))
+            putInt("Width", intent.getIntExtra("Width", 0))
+            putInt("Height", intent.getIntExtra("Height", 0))
+            if (sharedPref.getInt("BackupHeight", 0) == 0) {
+                putInt("BackupHeight", intent.getIntExtra("Height", 0))
+            }
             apply()
         }
     }

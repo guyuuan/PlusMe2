@@ -48,6 +48,7 @@ class MainActivity : AppCompatActivity() {
     }
     private val width by lazy { sharedPref.getInt("Width", 0) }
     private val height by lazy { sharedPref.getInt("Height", 0) }
+    private val backupHeight by lazy { sharedPref.getInt("BackupHeight", 0) }
     private val useCustomize by lazy { sharedPref.getBoolean("useCustomize", false) }
     private val customizeHeight by lazy { sharedPref.getInt("customizeHeight", 635) }
 
@@ -71,12 +72,12 @@ class MainActivity : AppCompatActivity() {
             )
         }
         if (CheckXP()) {
-            Toast.makeText(applicationContext, "Hooked", Toast.LENGTH_SHORT).show()
+            Toast.makeText(applicationContext, "模块已激活", Toast.LENGTH_SHORT).show()
             if (width == 0) {
                 sendBroadcast(Intent("getSize"))
             }
         } else {
-            Toast.makeText(applicationContext, "Hook failed", Toast.LENGTH_SHORT).show()
+            Toast.makeText(applicationContext, "模块未激活", Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -87,7 +88,7 @@ class MainActivity : AppCompatActivity() {
             initCustomGroup()
         }
 
-        customizeSwitch.setOnCheckedChangeListener { buttonView, isChecked ->
+        customizeSwitch.setOnCheckedChangeListener { _, isChecked ->
             if (isChecked) {
                 customizeGroup.visibility = View.VISIBLE
                 initCustomGroup()
@@ -162,6 +163,7 @@ class MainActivity : AppCompatActivity() {
                     putBoolean("useCustomize", true)
                     apply()
                 }
+                Toast.makeText(applicationContext, "设置保存成功", Toast.LENGTH_SHORT).show()
             }
         }
     }
@@ -240,9 +242,9 @@ class MainActivity : AppCompatActivity() {
                 putExtra("outputY", h)
             } else {
                 putExtra("aspectX", width)
-                putExtra("aspectY", height)
+                putExtra("aspectY", backupHeight)
                 putExtra("outputX", width)
-                putExtra("outputY", height)
+                putExtra("outputY", backupHeight)
             }
             putExtra("crop", true)
             putExtra("return-data", false)

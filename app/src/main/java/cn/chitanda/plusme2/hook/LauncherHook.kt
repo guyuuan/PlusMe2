@@ -11,6 +11,7 @@ import android.graphics.BitmapFactory
 import android.graphics.drawable.BitmapDrawable
 import android.net.Uri
 import android.os.Bundle
+import android.service.quicksettings.Tile
 import android.view.ViewGroup
 import android.widget.TextView
 import android.widget.Toast
@@ -126,33 +127,6 @@ class LauncherHook : IXposedHookLoadPackage {
             XposedBridge.log("Context获取错误")
             XposedBridge.log(t)
         }
-//
-//        try {
-//            XposedHelpers.findAndHookMethod(
-//                "net.oneplus.launcher.quickpage.view.WelcomePanel",
-//                lpparam.classLoader,
-//                "updateTitleTextSize",
-//                object : XC_MethodHook() {
-//                    override fun afterHookedMethod(param: MethodHookParam?) {
-//                        super.afterHookedMethod(param)
-//                        val width = header.width
-//                        val height = header.height
-//                        XposedBridge.log("updateTitleTextSize: $width $height ")
-//                        launcherContext.sendBroadcast(Intent("HeaderSize").apply {
-//                            putExtra("Width", width)
-//                            putExtra("Height", height)
-//                        })
-//                        Toast.makeText(
-//                            launcherContext,
-//                            "成功获取宽高width:$width,height$height",
-//                            Toast.LENGTH_SHORT
-//                        ).show()
-//                    }
-//                }
-//            )
-//        } catch (t: Throwable) {
-//            XposedBridge.log("updateTitleTextSize:$t")
-//        }
     }
 
     private suspend fun removeBg() {
@@ -180,11 +154,14 @@ class LauncherHook : IXposedHookLoadPackage {
                         )
                     )
                 )
+
             } catch (t: Throwable) {
                 XposedBridge.log(t)
+            } finally {
+                setBackground(getSavedBg())
             }
+
         }
-        setBackground(getSavedBg())
     }
 
     private fun setBackground(savedBg: Bitmap?) {
@@ -195,17 +172,18 @@ class LauncherHook : IXposedHookLoadPackage {
         }
     }
 
-    private fun saveBg(bitmap: Bitmap?) {
-        try {
-            bitmap?.compress(
-                Bitmap.CompressFormat.WEBP,
-                90,
-                FileOutputStream(File(launcherContext.filesDir, "bg"))
-            )
-        } catch (t: Throwable) {
-            XposedBridge.log(t)
+    private suspend fun saveBg(bitmap: Bitmap?) {
+        withContext(Dispatchers.IO) {
+            try {
+                bitmap?.compress(
+                    Bitmap.CompressFormat.WEBP,
+                    90,
+                    FileOutputStream(File(launcherContext.filesDir, "bg"))
+                )
+            } catch (t: Throwable) {
+                XposedBridge.log(t)
+            }
         }
-
     }
 
     private suspend fun getSavedBg() = withContext(Dispatchers.IO) {
