@@ -11,11 +11,11 @@ import android.graphics.BitmapFactory
 import android.graphics.drawable.BitmapDrawable
 import android.net.Uri
 import android.os.Bundle
-import android.service.quicksettings.Tile
 import android.view.ViewGroup
 import android.widget.TextView
 import android.widget.Toast
 import androidx.annotation.Keep
+import cn.chitanda.plusme2.utile.BroadcastUtile
 import de.robv.android.xposed.IXposedHookLoadPackage
 import de.robv.android.xposed.XC_MethodHook
 import de.robv.android.xposed.XposedBridge
@@ -48,15 +48,12 @@ class LauncherHook : IXposedHookLoadPackage {
                     override fun afterHookedMethod(param: MethodHookParam?) {
                         super.afterHookedMethod(param)
                         header = param?.thisObject as ViewGroup
-                        header.setOnClickListener {
-                            MainScope().launch { removeBg() }
-                        }
                         title = XposedHelpers.getObjectField(header, "mWelcomeTitle") as TextView
                         title.setOnClickListener {
                             val width = header.width
                             val height = header.height
                             XposedBridge.log("Title ClickListerner: $width $height ")
-                            launcherContext.sendBroadcast(Intent("HeaderSize").apply {
+                            launcherContext.sendBroadcast(BroadcastUtile.GET_SIZE.apply {
                                 putExtra("Width", width)
                                 putExtra("Height", height)
                             })
@@ -96,29 +93,29 @@ class LauncherHook : IXposedHookLoadPackage {
                             override fun onReceive(context: Context?, intent: Intent?) {
                                 XposedBridge.log("Launcher onReceive:")
                                 when (intent?.action) {
-                                    "Change" -> {
+                                    BroadcastUtile.CHANGE.action -> {
                                         XposedBridge.log("Change")
-                                        val uri = Uri.parse(intent.getStringExtra("Uri"))
+                                        val uri = Uri.parse(intent!!.getStringExtra("Uri"))
                                         if (uri != null) MainScope().launch {
                                             saveAndSetBackground(
                                                 uri
                                             )
                                         }
                                     }
-                                    "Delete" -> {
+                                    BroadcastUtile.DELETE.action -> {
                                         XposedBridge.log("Delete")
                                         MainScope().launch { removeBg() }
                                     }
-                                    "getSize" -> {
+                                    BroadcastUtile.GET_SIZE.action -> {
                                         XposedBridge.log("getSize")
                                         title.performClick()
                                     }
                                 }
                             }
                         }, IntentFilter().apply {
-                            addAction("Change")
-                            addAction("Delete")
-                            addAction("getSize")
+                            addAction(BroadcastUtile.CHANGE.action)
+                            addAction(BroadcastUtile.DELETE.action)
+                            addAction(BroadcastUtile.GET_SIZE.action)
                         })
                     }
                 }
@@ -147,42 +144,53 @@ class LauncherHook : IXposedHookLoadPackage {
     suspend fun saveAndSetBackground(uri: Uri?) {
         withContext(Dispatchers.IO) {
             try {
-                saveBg(
-                    BitmapFactory.decodeStream(
-                        launcherContext.contentResolver.openInputStream(
-                            uri!!
+                if (saveBg(
+                        BitmapFactory.decodeStream(
+                            launcherContext.contentResolver.openInputStream(
+                                uri!!
+                            )
                         )
                     )
-                )
-
+                ) {
+                    deleteScrop(uri)
+                    setBackground(getSavedBg())
+                } else {
+                    false
+                }
             } catch (t: Throwable) {
                 XposedBridge.log(t)
-            } finally {
-                setBackground(getSavedBg())
+                false
             }
-
         }
     }
 
-    private fun setBackground(savedBg: Bitmap?) {
-        if (savedBg != null) {
-            header.background = BitmapDrawable(launcherContext.resources, savedBg)
-        } else {
-            XposedBridge.log("Saved BitMap is null")
-        }
+    private suspend fun deleteScrop(uri: Uri) = withContext(Dispatchers.IO) {
+        launcherContext.contentResolver.delete(uri, null, null)
     }
 
-    private suspend fun saveBg(bitmap: Bitmap?) {
-        withContext(Dispatchers.IO) {
-            try {
-                bitmap?.compress(
-                    Bitmap.CompressFormat.WEBP,
-                    90,
-                    FileOutputStream(File(launcherContext.filesDir, "bg"))
-                )
-            } catch (t: Throwable) {
-                XposedBridge.log(t)
-            }
+    private fun setBackground(savedBg: Bitmap?) = if (savedBg != null) {
+        header.background = BitmapDrawable(launcherContext.resources, savedBg)
+        true
+    } else {
+        XposedBridge.log("Saved BitMap is null")
+        false
+    }.also {
+        launcherContext.sendBroadcast(BroadcastUtile.CHANGE_RESULT.apply {
+            putExtra(BroadcastUtile.CHANGE_RESULT.action, it)
+        })
+    }
+
+
+    private suspend fun saveBg(bitmap: Bitmap?) = withContext(Dispatchers.IO) {
+        try {
+            bitmap?.compress(
+                Bitmap.CompressFormat.WEBP,
+                100,
+                FileOutputStream(File(launcherContext.filesDir, "bg"))
+            )!!
+        } catch (t: Throwable) {
+            XposedBridge.log(t)
+            false
         }
     }
 

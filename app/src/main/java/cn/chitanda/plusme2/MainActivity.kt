@@ -22,19 +22,21 @@ import androidx.annotation.RequiresApi
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import androidx.core.graphics.drawable.toBitmap
+import cn.chitanda.plusme2.utile.BroadcastUtile
 import kotlinx.android.synthetic.main.activity_main.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.DataOutputStream
-import java.io.IOException
+import java.io.File
 
 const val REQUEST_IMG_GET = 1
 const val REQUEST_IMG_CROP = 2
 const val REQUEST_PERMISSION = 3
 const val REQUEST_PERMISSION_AGAIN = 4
 
+@Suppress("NULLABILITY_MISMATCH_BASED_ON_JAVA_ANNOTATIONS")
 class MainActivity : AppCompatActivity() {
     private var process: Process? = null
     private var os: DataOutputStream? = null
@@ -56,7 +58,12 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
-        registerReceiver(MyReceiver(), IntentFilter("HeaderSize"))
+        registerReceiver(
+            MyReceiver(),
+            IntentFilter().apply {
+                addAction(BroadcastUtile.GET_SIZE.action)
+                addAction(BroadcastUtile.CHANGE_RESULT.action)
+            })
         initView()
         if (ContextCompat.checkSelfPermission(
                 applicationContext,
@@ -74,7 +81,7 @@ class MainActivity : AppCompatActivity() {
         if (CheckXP()) {
             Toast.makeText(applicationContext, "模块已激活", Toast.LENGTH_SHORT).show()
             if (width == 0) {
-                sendBroadcast(Intent("getSize"))
+                sendBroadcast(BroadcastUtile.GET_SIZE)
             }
         } else {
             Toast.makeText(applicationContext, "模块未激活", Toast.LENGTH_SHORT).show()
@@ -109,13 +116,12 @@ class MainActivity : AppCompatActivity() {
             )
         }
         deleteButton.setOnClickListener {
-            sendBroadcast(Intent("Delete"))
+            sendBroadcast(BroadcastUtile.DELETE)
             RootCommand()
             closeOPLauncher()
             Toast.makeText(applicationContext, "已移除图片", Toast.LENGTH_SHORT).show()
         }
         changeButton.setOnClickListener {
-            Log.v("Xposed-Bridge", "$width  $height")
             if (imageView.drawable == null || uri == null) {
                 Toast.makeText(applicationContext, "请选择图片", Toast.LENGTH_SHORT).show()
                 return@setOnClickListener
@@ -123,7 +129,10 @@ class MainActivity : AppCompatActivity() {
             sendBroadcast(Intent("Change").apply {
                 putExtra("Uri", uri.toString())
             })
-            Toast.makeText(applicationContext, "已更换", Toast.LENGTH_SHORT).show()
+            MainScope().launch {
+                Log.v("Xposed-Bridge", "delete")
+                deleteCrop(uri)
+            }
         }
         closeLauncher.setOnClickListener {
             RootCommand()
@@ -135,7 +144,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun initCustomGroup() {
         if (customizeSwitch.isChecked) {
-            customizeW.hint = width.toString()
+            customizeW.hint = sharedPref.getInt("Width", 0).toString()
             customizeW.isEnabled = false
             customizeH.hint = customizeHeight.toString()
             object : TextWatcher {
@@ -213,19 +222,24 @@ class MainActivity : AppCompatActivity() {
     @RequiresApi(Build.VERSION_CODES.Q)
     private suspend fun deleteCrop(uri: Uri?) = withContext(Dispatchers.IO) {
         try {
-            contentResolver.delete(uri!!, null, null)
-        } catch (e: IOException) {
-            e.printStackTrace()
+            Log.v("Xposed-Bridge", ContentUris.parseId(uri!!).toString())
+            contentResolver.delete(
+                uri,
+                null,
+                null
+            )
         } catch (e1: RecoverableSecurityException) {
-            e1.printStackTrace()
             try {
                 startIntentSenderForResult(
                     e1.userAction.actionIntent.intentSender,
-                    111,
-                    null, 0, 0, 0
+                    100,
+                    null,
+                    0,
+                    0,
+                    0
                 )
             } catch (e2: IntentSender.SendIntentException) {
-                e2.printStackTrace()
+                Log.v("Xposed-Bridge", "e2.toString()")
             }
         }
     }
