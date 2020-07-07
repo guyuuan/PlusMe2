@@ -3,7 +3,6 @@ package cn.chitanda.plusme2
 import android.Manifest
 import android.annotation.SuppressLint
 import android.app.Activity
-import android.app.RecoverableSecurityException
 import android.content.*
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
@@ -22,14 +21,13 @@ import androidx.annotation.RequiresApi
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import androidx.core.graphics.drawable.toBitmap
-import cn.chitanda.plusme2.utile.BroadcastUtile
+import cn.chitanda.plusme2.utile.BroadcastUtil
 import kotlinx.android.synthetic.main.activity_main.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.DataOutputStream
-import java.io.File
 
 const val REQUEST_IMG_GET = 1
 const val REQUEST_IMG_CROP = 2
@@ -53,16 +51,17 @@ class MainActivity : AppCompatActivity() {
     private val backupHeight by lazy { sharedPref.getInt("BackupHeight", 0) }
     private val useCustomize by lazy { sharedPref.getBoolean("useCustomize", false) }
     private val customizeHeight by lazy { sharedPref.getInt("customizeHeight", 635) }
+    private val receiver by lazy { MyReceiver() }
 
     @SuppressLint("SetTextI18n")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
         registerReceiver(
-            MyReceiver(),
+            receiver,
             IntentFilter().apply {
-                addAction(BroadcastUtile.GET_SIZE.action)
-                addAction(BroadcastUtile.CHANGE_RESULT.action)
+                addAction(BroadcastUtil.GET_SIZE.action)
+                addAction(BroadcastUtil.CHANGE_RESULT.action)
             })
         initView()
         if (ContextCompat.checkSelfPermission(
@@ -81,7 +80,7 @@ class MainActivity : AppCompatActivity() {
         if (CheckXP()) {
             Toast.makeText(applicationContext, "模块已激活", Toast.LENGTH_SHORT).show()
             if (width == 0) {
-                sendBroadcast(BroadcastUtile.GET_SIZE)
+                sendBroadcast(BroadcastUtil.GET_SIZE)
             }
         } else {
             Toast.makeText(applicationContext, "模块未激活", Toast.LENGTH_SHORT).show()
@@ -90,11 +89,12 @@ class MainActivity : AppCompatActivity() {
 
     private fun initView() {
         if (useCustomize) {
+            imageView.layoutParams.height = customizeHeight
             customizeSwitch.isChecked = useCustomize
             customizeGroup.visibility = View.VISIBLE
             initCustomGroup()
         }
-
+        imageView.layoutParams.height = height
         customizeSwitch.setOnCheckedChangeListener { _, isChecked ->
             if (isChecked) {
                 customizeGroup.visibility = View.VISIBLE
@@ -116,7 +116,7 @@ class MainActivity : AppCompatActivity() {
             )
         }
         deleteButton.setOnClickListener {
-            sendBroadcast(BroadcastUtile.DELETE)
+            sendBroadcast(BroadcastUtil.DELETE)
             RootCommand()
             closeOPLauncher()
             Toast.makeText(applicationContext, "已移除图片", Toast.LENGTH_SHORT).show()
@@ -129,10 +129,7 @@ class MainActivity : AppCompatActivity() {
             sendBroadcast(Intent("Change").apply {
                 putExtra("Uri", uri.toString())
             })
-            MainScope().launch {
-                Log.v("Xposed-Bridge", "delete")
-                deleteCrop(uri)
-            }
+
         }
         closeLauncher.setOnClickListener {
             RootCommand()
@@ -219,31 +216,6 @@ class MainActivity : AppCompatActivity() {
         true
     }
 
-    @RequiresApi(Build.VERSION_CODES.Q)
-    private suspend fun deleteCrop(uri: Uri?) = withContext(Dispatchers.IO) {
-        try {
-            Log.v("Xposed-Bridge", ContentUris.parseId(uri!!).toString())
-            contentResolver.delete(
-                uri,
-                null,
-                null
-            )
-        } catch (e1: RecoverableSecurityException) {
-            try {
-                startIntentSenderForResult(
-                    e1.userAction.actionIntent.intentSender,
-                    100,
-                    null,
-                    0,
-                    0,
-                    0
-                )
-            } catch (e2: IntentSender.SendIntentException) {
-                Log.v("Xposed-Bridge", "e2.toString()")
-            }
-        }
-    }
-
     private fun cropIMG(uri: Uri) {
         val intent = Intent("com.android.camera.action.CROP").apply {
             setDataAndType(uri, "image/*")
@@ -320,6 +292,7 @@ class MainActivity : AppCompatActivity() {
         if (requestCode == REQUEST_IMG_CROP && resultCode == Activity.RESULT_OK) {
             uri = data?.data
 //            Toast.makeText(applicationContext, data?.data.toString(), Toast.LENGTH_SHORT).show()
+            imageView.layoutParams.height = sharedPref.getInt("customizeHeight", 635)
             imageView.setImageURI(uri!!)
         }
     }
@@ -356,5 +329,10 @@ class MainActivity : AppCompatActivity() {
                 finish()
             }
         }
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        unregisterReceiver(receiver)
     }
 }

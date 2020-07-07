@@ -2,9 +2,9 @@ package cn.chitanda.plusme2.utile
 
 import android.content.Intent
 
-object BroadcastUtile {
+object BroadcastUtil {
     val CHANGE_RESULT = Intent("ChangeResult")
     val CHANGE = Intent("Change")
-    val DELETE = Intent("DELTE")
-    val GET_SIZE =Intent("GetSize")
+    val DELETE = Intent("DELETE")
+    val GET_SIZE = Intent("GetSize")
 }

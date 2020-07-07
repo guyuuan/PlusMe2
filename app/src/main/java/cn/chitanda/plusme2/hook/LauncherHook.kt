@@ -15,7 +15,7 @@ import android.view.ViewGroup
 import android.widget.TextView
 import android.widget.Toast
 import androidx.annotation.Keep
-import cn.chitanda.plusme2.utile.BroadcastUtile
+import cn.chitanda.plusme2.utile.BroadcastUtil
 import de.robv.android.xposed.IXposedHookLoadPackage
 import de.robv.android.xposed.XC_MethodHook
 import de.robv.android.xposed.XposedBridge
@@ -36,6 +36,30 @@ class LauncherHook : IXposedHookLoadPackage {
     private lateinit var header: ViewGroup
     private lateinit var title: TextView
     private var cunt = 0
+    private val receiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            XposedBridge.log("Launcher onReceive:")
+            when (intent?.action) {
+                BroadcastUtil.CHANGE.action -> {
+                    XposedBridge.log("Change")
+                    val uri = Uri.parse(intent!!.getStringExtra("Uri"))
+                    if (uri != null) MainScope().launch {
+                        saveAndSetBackground(
+                            uri
+                        )
+                    }
+                }
+                BroadcastUtil.DELETE.action -> {
+                    XposedBridge.log("Delete")
+                    MainScope().launch { removeBg() }
+                }
+                BroadcastUtil.GET_SIZE.action -> {
+                    XposedBridge.log("getSize")
+                    title.performClick()
+                }
+            }
+        }
+    }
 
     override fun handleLoadPackage(lpparam: XC_LoadPackage.LoadPackageParam?) {
         if ("net.oneplus.launcher" != lpparam?.processName) return
@@ -53,7 +77,7 @@ class LauncherHook : IXposedHookLoadPackage {
                             val width = header.width
                             val height = header.height
                             XposedBridge.log("Title ClickListerner: $width $height ")
-                            launcherContext.sendBroadcast(BroadcastUtile.GET_SIZE.apply {
+                            launcherContext.sendBroadcast(BroadcastUtil.GET_SIZE.apply {
                                 putExtra("Width", width)
                                 putExtra("Height", height)
                             })
@@ -89,33 +113,10 @@ class LauncherHook : IXposedHookLoadPackage {
                         launcherContext = AndroidAppHelper.currentApplication().applicationContext
                         XposedBridge.log("Context获取成功：$launcherContext")
                         //XposedBridge.log(launcherActivity.applicationContext.toString())
-                        launcherContext.registerReceiver(object : BroadcastReceiver() {
-                            override fun onReceive(context: Context?, intent: Intent?) {
-                                XposedBridge.log("Launcher onReceive:")
-                                when (intent?.action) {
-                                    BroadcastUtile.CHANGE.action -> {
-                                        XposedBridge.log("Change")
-                                        val uri = Uri.parse(intent!!.getStringExtra("Uri"))
-                                        if (uri != null) MainScope().launch {
-                                            saveAndSetBackground(
-                                                uri
-                                            )
-                                        }
-                                    }
-                                    BroadcastUtile.DELETE.action -> {
-                                        XposedBridge.log("Delete")
-                                        MainScope().launch { removeBg() }
-                                    }
-                                    BroadcastUtile.GET_SIZE.action -> {
-                                        XposedBridge.log("getSize")
-                                        title.performClick()
-                                    }
-                                }
-                            }
-                        }, IntentFilter().apply {
-                            addAction(BroadcastUtile.CHANGE.action)
-                            addAction(BroadcastUtile.DELETE.action)
-                            addAction(BroadcastUtile.GET_SIZE.action)
+                        launcherContext.registerReceiver(receiver, IntentFilter().apply {
+                            addAction(BroadcastUtil.CHANGE.action)
+                            addAction(BroadcastUtil.DELETE.action)
+                            addAction(BroadcastUtil.GET_SIZE.action)
                         })
                     }
                 }
@@ -123,6 +124,23 @@ class LauncherHook : IXposedHookLoadPackage {
         } catch (t: Throwable) {
             XposedBridge.log("Context获取错误")
             XposedBridge.log(t)
+        }
+
+        try {
+            launcherClass =
+                XposedHelpers.findClass("net.oneplus.launcher.Launcher", lpparam.classLoader)
+            XposedHelpers.findAndHookMethod(
+                launcherClass,
+                "onCreate",
+                object : XC_MethodHook() {
+                    override fun afterHookedMethod(param: MethodHookParam?) {
+                        super.afterHookedMethod(param)
+                        launcherContext.unregisterReceiver(receiver)
+                    }
+                }
+            )
+        } catch (t: Throwable) {
+            XposedBridge.log("onDestroy: $t")
         }
     }
 
@@ -152,7 +170,7 @@ class LauncherHook : IXposedHookLoadPackage {
                         )
                     )
                 ) {
-                    deleteScrop(uri)
+                    deleteCrop(uri)
                     setBackground(getSavedBg())
                 } else {
                     false
@@ -164,7 +182,7 @@ class LauncherHook : IXposedHookLoadPackage {
         }
     }
 
-    private suspend fun deleteScrop(uri: Uri) = withContext(Dispatchers.IO) {
+    private suspend fun deleteCrop(uri: Uri) = withContext(Dispatchers.IO) {
         launcherContext.contentResolver.delete(uri, null, null)
     }
 
@@ -175,8 +193,8 @@ class LauncherHook : IXposedHookLoadPackage {
         XposedBridge.log("Saved BitMap is null")
         false
     }.also {
-        launcherContext.sendBroadcast(BroadcastUtile.CHANGE_RESULT.apply {
-            putExtra(BroadcastUtile.CHANGE_RESULT.action, it)
+        launcherContext.sendBroadcast(BroadcastUtil.CHANGE_RESULT.apply {
+            putExtra(BroadcastUtil.CHANGE_RESULT.action, it)
         })
     }
 
