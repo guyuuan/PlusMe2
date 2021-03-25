@@ -80,7 +80,7 @@ class MainActivity : AppCompatActivity() {
         if (CheckXP()) {
             Toast.makeText(applicationContext, "模块已激活", Toast.LENGTH_SHORT).show()
             if (width == 0) {
-                sendBroadcast(BroadcastUtil.GET_SIZE)
+                sendBroadcast(BroadcastUtil.GET_SIZE.apply { setPackage("net.oneplus.launcher") })
             }
         } else {
             Toast.makeText(applicationContext, "模块未激活", Toast.LENGTH_SHORT).show()
@@ -117,7 +117,7 @@ class MainActivity : AppCompatActivity() {
         }
         deleteButton.setOnClickListener {
             sendBroadcast(BroadcastUtil.DELETE)
-            RootCommand()
+            rootCommand()
             closeOPLauncher()
             Toast.makeText(applicationContext, "已移除图片", Toast.LENGTH_SHORT).show()
         }
@@ -132,7 +132,7 @@ class MainActivity : AppCompatActivity() {
 
         }
         closeLauncher.setOnClickListener {
-            RootCommand()
+            rootCommand()
             closeOPLauncher()
             Toast.makeText(applicationContext, "已重启桌面", Toast.LENGTH_SHORT).show()
         }
@@ -241,7 +241,7 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun RootCommand(): Boolean {
+    private fun rootCommand(): Boolean {
         val command = "chmod 777 $packageCodePath"
 
         try {
