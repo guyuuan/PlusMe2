@@ -13,7 +13,7 @@ class MyselfHook : IXposedHookLoadPackage {
         XposedHelpers.findAndHookMethod(
             "cn.chitanda.plusme2.MainActivity",
             lpparam.classLoader,
-            "CheckXP",
+            "checkXP",
             object : XC_MethodHook() {
                 override fun afterHookedMethod(param: MethodHookParam?) {
                     super.afterHookedMethod(param)

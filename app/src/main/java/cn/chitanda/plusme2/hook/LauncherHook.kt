@@ -2,25 +2,26 @@ package cn.chitanda.plusme2.hook
 
 import android.app.Activity
 import android.app.AndroidAppHelper
-import android.content.BroadcastReceiver
+import android.content.ComponentName
 import android.content.Context
-import android.content.Intent
-import android.content.IntentFilter
+import android.content.ServiceConnection
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
-import android.graphics.Color
 import android.graphics.drawable.BitmapDrawable
-import android.graphics.drawable.ColorDrawable
 import android.net.Uri
 import android.os.Bundle
+import android.os.IBinder
 import android.util.AttributeSet
+import android.util.Log
+import android.view.View
 import android.view.ViewGroup
-import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.TextView
 import android.widget.Toast
 import androidx.annotation.Keep
 import androidx.core.view.get
+import cn.chitanda.plusme2.service.IPlusMeStub
+import cn.chitanda.plusme2.ui.BackgroundView
 import cn.chitanda.plusme2.utile.BroadcastUtil
 import de.robv.android.xposed.IXposedHookLoadPackage
 import de.robv.android.xposed.XC_MethodHook
@@ -28,11 +29,11 @@ import de.robv.android.xposed.XposedBridge
 import de.robv.android.xposed.XposedHelpers
 import de.robv.android.xposed.callbacks.XC_LoadPackage
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.MainScope
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
+
+const val TAG = "PlusMe2"
 
 @Keep
 class LauncherHook : IXposedHookLoadPackage {
@@ -40,20 +41,32 @@ class LauncherHook : IXposedHookLoadPackage {
     private lateinit var launcherActivity: Activity
     private lateinit var launcherClass: Class<*>
     private lateinit var header: ViewGroup
+    private var backgroundView: BackgroundView? = null
     private var width = 0
     private var height = 0
-    private val receiver = object : BroadcastReceiver() {
+/*    private val receiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             XposedBridge.log("Launcher onReceive:")
             when (intent?.action) {
                 BroadcastUtil.CHANGE.action -> {
                     XposedBridge.log("Change")
-                    val uri = Uri.parse(intent!!.getStringExtra("Uri"))
-                    if (uri != null) MainScope().launch {
-                        saveAndSetBackground(
-                            uri
-                        )
+                    var uri: Uri? = null
+                    intent?.let {
+                        uri = Uri.parse(it.getStringExtra("Uri"))
+                        val takeFlags = (it.flags
+                                and (Intent.FLAG_GRANT_READ_URI_PERMISSION
+                                or Intent.FLAG_GRANT_WRITE_URI_PERMISSION))
+                        try {
+                            launcherContext.contentResolver.takePersistableUriPermission(
+                                uri!!, takeFlags
+                            )
+                        } catch (e: Exception) {
+                            Toast.makeText(launcherContext, e.message, Toast.LENGTH_SHORT).show()
+                        } finally {
+                            backgroundView?.uri = uri
+                        }
                     }
+
                 }
                 BroadcastUtil.DELETE.action -> {
                     XposedBridge.log("Delete")
@@ -69,6 +82,19 @@ class LauncherHook : IXposedHookLoadPackage {
                 }
             }
         }
+    }*/
+
+    private var binder: IPlusMeStub? = null
+    private val conn = object : ServiceConnection {
+        override fun onServiceConnected(name: ComponentName?, service: IBinder?) {
+            XposedBridge.log("onServiceConnected")
+            Toast.makeText(launcherActivity,"onServiceConnected",Toast.LENGTH_SHORT).show()
+            binder = service as? IPlusMeStub
+        }
+
+        override fun onServiceDisconnected(name: ComponentName?) {
+            binder = null
+        }
     }
 
     override fun handleLoadPackage(lpparam: XC_LoadPackage.LoadPackageParam?) {
@@ -81,16 +107,26 @@ class LauncherHook : IXposedHookLoadPackage {
                 "onCreate",
                 Bundle::class.java,
                 object : XC_MethodHook() {
+                    override fun beforeHookedMethod(param: MethodHookParam?) {
+                        super.beforeHookedMethod(param)
+                        Log.i(TAG, "beforeHookedMethod: Launcher onCreate")
+                    }
                     override fun afterHookedMethod(param: MethodHookParam?) {
                         super.afterHookedMethod(param)
                         launcherActivity = param?.thisObject as Activity
                         launcherContext = AndroidAppHelper.currentApplication().applicationContext
-                        XposedBridge.log("Context获取成功：$launcherContext")
-                        launcherContext.registerReceiver(receiver, IntentFilter().apply {
+                        Log.i(TAG, "afterHookedMethod: Launcher onCreate")
+/*                        launcherContext.registerReceiver(receiver, IntentFilter().apply {
                             addAction(BroadcastUtil.CHANGE.action)
                             addAction(BroadcastUtil.DELETE.action)
                             addAction(BroadcastUtil.GET_SIZE.action)
-                        })
+                        })*/
+//                        launcherActivity.bindService(
+//                            Intent(
+//                                launcherActivity,
+//                                PlusMeService::class.java
+//                            ), conn, Context.BIND_AUTO_CREATE
+//                        )
                     }
                 }
             )
@@ -102,7 +138,8 @@ class LauncherHook : IXposedHookLoadPackage {
                         super.beforeHookedMethod(param)
                         val context = AndroidAppHelper.currentApplication().applicationContext
                         XposedBridge.log("Context获取成功：$launcherContext")
-                        context.unregisterReceiver(receiver)
+//                        context.unregisterReceiver(receiver)
+                        launcherActivity.unbindService(conn)
                     }
                 }
             )
@@ -121,41 +158,25 @@ class LauncherHook : IXposedHookLoadPackage {
                         super.afterHookedMethod(param)
                         val view = param?.thisObject as ViewGroup
                         view.post {
-                            if (view.get(0) is ImageView) return@post
+                            if (view[0] is ImageView) return@post
                             XposedBridge.log("add view ")
-                            view.addView(ImageView(view.context).apply {
+                            backgroundView = BackgroundView(view.context).apply {
                                 layoutParams = ViewGroup.LayoutParams(
                                     ViewGroup.LayoutParams.MATCH_PARENT,
                                     ViewGroup.LayoutParams.MATCH_PARENT
                                 )
-                                setImageDrawable(ColorDrawable(Color.GRAY))
-                            }, 0)
+                            }
+                            backgroundView?.let { view.addView(it, 0) }
+                            val id = view.context.resources.getIdentifier(
+                                "status_background",
+                                "id",
+                                "net.oneplus.launcher"
+                            )
+                            val statusBarBG = view.findViewById<View>(id)
+                            view.removeView(statusBarBG)
                         }
                     }
                 })
-//            XposedHelpers.findAndHookMethod(
-//                "net.oneplus.launcher.quickpage.QuickPageCoordinatorLayout",
-//                lpparam.classLoader,
-//                "dispatchTouchEvent",
-//                MotionEvent::class.java,
-//                object : XC_MethodHook() {
-//                    override fun afterHookedMethod(param: MethodHookParam?) {
-//                        super.afterHookedMethod(param)
-//                        val view = param?.thisObject as ViewGroup
-//                        view.post {
-//                            if (view.get(0) is ImageView) return@post
-//                            XposedBridge.log("add view ")
-//                            view.addView(ImageView(view.context).apply {
-//                                layoutParams = ViewGroup.LayoutParams(
-//                                    ViewGroup.LayoutParams.MATCH_PARENT,
-//                                    ViewGroup.LayoutParams.MATCH_PARENT
-//                                )
-//                                setImageDrawable(ColorDrawable(Color.GRAY))
-//                            }, 0)
-//                        }
-//                    }
-//                }
-//            )
             XposedHelpers.findAndHookMethod(
                 "net.oneplus.launcher.quickpage.view.WelcomePanel",
                 lpparam.classLoader,
@@ -171,7 +192,7 @@ class LauncherHook : IXposedHookLoadPackage {
 //                            title.updatePadding(top =1000)
 //                        }
                         header.post {
-                            (header.parent as ViewGroup).minimumHeight = 3120
+                            (header.parent.parent as ViewGroup).minimumHeight = 3120
 
                             if (width == 0 || height == 0) {
                                 width = header.width
